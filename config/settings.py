@@ -29,29 +29,8 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 # Slack Bot Scopes
 SLACK_SCOPES = [
     "app_mentions:read",
-    "assistant:write",
-    "bookmarks:read",
-    "bookmarks:write",
-    "calls:read",
-    "calls:write",
-    "canvases:read",
-    "canvases:write",
-    "channels:history",
-    "channels:join",
-    "channels:manage",
-    "channels:read",
-    "channels:write.invites",
-    "channels:write.topic",
     "chat:write",
-    "chat:write.customize",
-    "chat:write.public",
-    "commands",
-    "conversations.connect:manage",
-    "emoji:read",
     "im:history",
     "im:read",
-    "im:write",
-    "mpim:history",
-    "users:read",
-    "users:write"
+    "users:read"
 ]
