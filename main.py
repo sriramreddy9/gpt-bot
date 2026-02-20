@@ -152,11 +152,22 @@ async def slack_events(request: Request) -> Response:
                 
                 # Handle DMs
                 elif event_type == "message":
-                    if event.get("channel_type") == "im":
-                        user_id = event.get("user")
-                        channel_id = event.get("channel")
-                        
-                        logger.info(f"DM from {user_id}")
+                    # Check if this is a direct message
+                    channel_type = event.get("channel_type") or event.get("type")
+                    channel_id = event.get("channel")
+                    user_id = event.get("user")
+                    
+                    # Log all message events for debugging
+                    logger.info(f"Message event - channel_type: {channel_type}, channel: {channel_id}, user: {user_id}")
+                    
+                    # Skip bot messages and messages without user
+                    if event.get("subtype") in ["bot_message", "message_deleted"]:
+                        logger.info("Skipping bot message or deleted message")
+                    elif not user_id:
+                        logger.info("Skipping message without user ID")
+                    elif channel_type == "im" or (hasattr(channel_id, 'startswith') and channel_id.startswith("D")):
+                        # D-prefix indicates direct message channel
+                        logger.info(f"DM from {user_id} in {channel_id}")
                         
                         if slack_client:
                             slack_client.chat_postMessage(
