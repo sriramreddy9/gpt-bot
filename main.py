@@ -9,6 +9,7 @@ import hashlib
 import time
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.background import BackgroundTasks
 from config.settings import SERVER_HOST, SERVER_PORT, DEBUG, SLACK_SIGNING_SECRET
 from auth.oauth import router as oauth_router
 from bot.slack_app import slack_app
@@ -16,10 +17,16 @@ from utils.logger import logger
 from utils.ai_agent import call_ai_agent
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from collections import deque
+from datetime import datetime, timedelta
 
 # Get bot token for sending messages
 SLACK_BOT_TOKEN = __import__('os').getenv("SLACK_BOT_TOKEN")
 slack_client = WebClient(token=SLACK_BOT_TOKEN) if SLACK_BOT_TOKEN else None
+
+# Track processed events to prevent duplicates (Slack retries)
+# Store tuples of (event_id, timestamp) - keep last 1000 events
+processed_events = deque(maxlen=1000)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -71,6 +78,94 @@ def verify_slack_request(request_body: bytes, timestamp: str, signature: str) ->
     return hmac.compare_digest(my_signature, signature)
 
 
+def is_event_processed(event_id: str) -> bool:
+    """
+    Check if we've already processed this event (to prevent handling Slack retries).
+    """
+    for processed_id, _ in processed_events:
+        if processed_id == event_id:
+            logger.info(f"Event {event_id} already processed, skipping")
+            return True
+    return False
+
+
+def mark_event_processed(event_id: str):
+    """
+    Mark an event as processed to prevent handling retries.
+    """
+    processed_events.append((event_id, datetime.now()))
+    logger.info(f"Marked event {event_id} as processed")
+
+
+async def process_slack_event(event: dict, event_id: str):
+    """
+    Process Slack event asynchronously.
+    This runs in the background after we return 200 OK to Slack.
+    """
+    try:
+        event_type = event.get("type")
+        logger.info(f"Processing event {event_id} type {event_type}")
+        
+        # Handle app mentions
+        if event_type == "app_mention":
+            user_id = event.get("user")
+            channel_id = event.get("channel")
+            thread_ts = event.get("thread_ts", event.get("ts"))
+            message_text = event.get("text", "")
+            
+            logger.info(f"Mention from {user_id} in {channel_id}: {message_text}")
+            
+            if slack_client:
+                try:
+                    # Call AI agent to get response
+                    ai_response = call_ai_agent(message_text)
+                    
+                    slack_client.chat_postMessage(
+                        channel=channel_id,
+                        text=ai_response,
+                        thread_ts=thread_ts
+                    )
+                    logger.info(f"AI response sent: {ai_response}")
+                except Exception as e:
+                    logger.error(f"Error sending mention response: {str(e)}")
+        
+        # Handle DMs
+        elif event_type == "message":
+            # Skip if this is a bot message or a message from our bot
+            if event.get("bot_id") or event.get("subtype") in ["bot_message", "message_deleted"]:
+                logger.info("Skipping bot message")
+            elif not event.get("user"):
+                logger.info("Skipping message without user ID")
+            else:
+                # Check if this is a direct message
+                channel_type = event.get("channel_type")
+                channel_id = event.get("channel")
+                user_id = event.get("user")
+                
+                logger.info(f"Message event - channel_type: {channel_type}, channel: {channel_id}, user: {user_id}")
+                
+                # D-prefix indicates direct message channel, or channel_type is "im"
+                if channel_type == "im" or (channel_id and channel_id.startswith("D")):
+                    message_text = event.get("text", "")
+                    logger.info(f"DM from {user_id} in {channel_id}: {message_text}")
+                    
+                    if slack_client:
+                        try:
+                            # Call AI agent to get response
+                            ai_response = call_ai_agent(message_text)
+                            
+                            slack_client.chat_postMessage(
+                                channel=channel_id,
+                                text=ai_response
+                            )
+                            logger.info(f"AI DM response sent: {ai_response}")
+                        except Exception as e:
+                            logger.error(f"Error sending DM response: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Error processing event {event_id}: {str(e)}", exc_info=True)
+
+
 @app.get("/")
 def root():
     """Health check endpoint."""
@@ -100,10 +195,11 @@ def slack_events_get() -> Response:
 
 
 @app.post("/slack/events")
-async def slack_events(request: Request) -> Response:
+async def slack_events(request: Request, background_tasks: BackgroundTasks) -> Response:
     """
     Handle Slack events via webhooks.
-    Process app_mention and message.im events directly.
+    Returns 200 OK immediately, processes events asynchronously.
+    This prevents Slack from retrying due to slow AI API calls.
     """
     try:
         # Get headers and body
@@ -130,68 +226,21 @@ async def slack_events(request: Request) -> Response:
         # Handle events
         if data.get("type") == "event_callback":
             event = data.get("event", {})
-            event_type = event.get("type")
+            event_id = data.get("event_id")
             
-            logger.info(f"Processing event: {event_type}")
+            # Check if we've already processed this event
+            if is_event_processed(event_id):
+                logger.info(f"Event {event_id} is a retry, returning 200 OK without processing")
+                return Response("OK", status_code=200)
             
-            try:
-                # Handle app mentions
-                if event_type == "app_mention":
-                    user_id = event.get("user")
-                    channel_id = event.get("channel")
-                    thread_ts = event.get("thread_ts", event.get("ts"))
-                    message_text = event.get("text", "")
-                    
-                    logger.info(f"Mention from {user_id} in {channel_id}: {message_text}")
-                    
-                    if slack_client:
-                        # Call AI agent to get response
-                        ai_response = call_ai_agent(message_text)
-                        
-                        slack_client.chat_postMessage(
-                            channel=channel_id,
-                            text=ai_response,
-                            thread_ts=thread_ts
-                        )
-                        logger.info(f"AI response sent: {ai_response}")
-                
-                # Handle DMs
-                elif event_type == "message":
-                    # Skip if this is a bot message or a message from our bot
-                    if event.get("bot_id") or event.get("subtype") in ["bot_message", "message_deleted"]:
-                        logger.info("Skipping bot message")
-                    elif not event.get("user"):
-                        logger.info("Skipping message without user ID")
-                    else:
-                        # Check if this is a direct message
-                        channel_type = event.get("channel_type")
-                        channel_id = event.get("channel")
-                        user_id = event.get("user")
-                        
-                        # Log all message events for debugging
-                        logger.info(f"Message event - channel_type: {channel_type}, channel: {channel_id}, user: {user_id}")
-                        
-                        # D-prefix indicates direct message channel, or channel_type is "im"
-                        if channel_type == "im" or (channel_id and channel_id.startswith("D")):
-                            message_text = event.get("text", "")
-                            logger.info(f"DM from {user_id} in {channel_id}: {message_text}")
-                            
-                            if slack_client:
-                                # Call AI agent to get response
-                                ai_response = call_ai_agent(message_text)
-                                
-                                slack_client.chat_postMessage(
-                                    channel=channel_id,
-                                    text=ai_response
-                                )
-                                logger.info(f"AI DM response sent: {ai_response}")
+            # Mark as processed
+            mark_event_processed(event_id)
             
-            except SlackApiError as e:
-                logger.error(f"Slack API error: {e.response['error']}")
-            except Exception as e:
-                logger.error(f"Error processing event: {str(e)}", exc_info=True)
+            # Process event asynchronously in background
+            background_tasks.add_task(process_slack_event, event, event_id)
+            logger.info(f"Event {event_id} queued for background processing")
         
-        # Always return 200 to acknowledge receipt
+        # Always return 200 to acknowledge receipt immediately
         return Response("OK", status_code=200)
     
     except Exception as e:

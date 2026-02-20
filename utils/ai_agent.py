@@ -69,7 +69,7 @@ def call_ai_agent(message: str) -> str:
 
     try:
         logger.info(f"Calling AI agent with message: {message}")
-        response = requests.post(LYZR_CHAT_URL, headers=headers, json=payload, timeout=30)
+        response = requests.post(LYZR_CHAT_URL, headers=headers, json=payload, timeout=15)
 
         if response.status_code == 200:
             api_json = response.json()
