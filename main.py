@@ -13,6 +13,12 @@ from config.settings import SERVER_HOST, SERVER_PORT, DEBUG, SLACK_SIGNING_SECRE
 from auth.oauth import router as oauth_router
 from bot.slack_app import slack_app
 from utils.logger import logger
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+
+# Get bot token for sending messages
+SLACK_BOT_TOKEN = __import__('os').getenv("SLACK_BOT_TOKEN")
+slack_client = WebClient(token=SLACK_BOT_TOKEN) if SLACK_BOT_TOKEN else None
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -86,46 +92,80 @@ def health():
 async def slack_events(request: Request) -> Response:
     """
     Handle Slack events via webhooks.
-    Verifies the request signature and processes events.
+    Process app_mention and message.im events directly.
     """
     try:
-        # Get headers
+        # Get headers and body
         timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
         signature = request.headers.get("X-Slack-Signature", "")
-        
-        # Get body
         body = await request.body()
         
-        logger.info(f"Received Slack webhook - Timestamp: {timestamp}, Has signature: {bool(signature)}")
+        logger.info("Received Slack webhook")
         
-        # Verify request
+        # Verify signature
         if not verify_slack_request(body, timestamp, signature):
-            logger.warning("Invalid Slack request signature")
+            logger.warning("Invalid signature")
             return Response("Unauthorized", status_code=401)
         
-        # Parse body
+        # Parse request
         data = json.loads(body)
+        logger.info(f"Event type: {data.get('type')}")
         
-        # Handle URL verification challenge
+        # Handle URL verification
         if data.get("type") == "url_verification":
-            logger.info("Responding to Slack URL verification challenge")
+            logger.info("URL verification")
             return Response(data.get("challenge"), media_type="text/plain")
         
         # Handle events
-        logger.info(f"Processing Slack event: {data.get('type')}")
+        if data.get("type") == "event_callback":
+            event = data.get("event", {})
+            event_type = event.get("type")
+            
+            logger.info(f"Processing event: {event_type}")
+            
+            try:
+                # Handle app mentions
+                if event_type == "app_mention":
+                    user_id = event.get("user")
+                    channel_id = event.get("channel")
+                    thread_ts = event.get("thread_ts", event.get("ts"))
+                    
+                    logger.info(f"Mention from {user_id} in {channel_id}")
+                    
+                    if slack_client:
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text="hey i am gptbot",
+                            thread_ts=thread_ts
+                        )
+                        logger.info("Reply sent")
+                
+                # Handle DMs
+                elif event_type == "message":
+                    if event.get("channel_type") == "im":
+                        user_id = event.get("user")
+                        channel_id = event.get("channel")
+                        
+                        logger.info(f"DM from {user_id}")
+                        
+                        if slack_client:
+                            slack_client.chat_postMessage(
+                                channel=channel_id,
+                                text="hey i am gptbot"
+                            )
+                            logger.info("DM reply sent")
+            
+            except SlackApiError as e:
+                logger.error(f"Slack API error: {e.response['error']}")
+            except Exception as e:
+                logger.error(f"Error processing event: {str(e)}", exc_info=True)
         
-        # Process event with Slack Bolt
-        try:
-            # Use Slack Bolt's dispatch method
-            response = await slack_app.async_dispatch(request)
-            return response
-        except Exception as e:
-            logger.error(f"Error processing event: {str(e)}", exc_info=True)
-            return Response("OK", status_code=200)
-        
+        # Always return 200 to acknowledge receipt
+        return Response("OK", status_code=200)
+    
     except Exception as e:
         logger.error(f"Error in /slack/events: {str(e)}", exc_info=True)
-        return Response("Internal Server Error", status_code=500)
+        return Response("OK", status_code=200)
 
 
 if __name__ == "__main__":
