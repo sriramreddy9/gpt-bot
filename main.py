@@ -88,6 +88,16 @@ def health():
     }
 
 
+@app.get("/slack/events")
+def slack_events_get() -> Response:
+    """
+    Handle GET requests to the webhook endpoint.
+    Slack may test the endpoint with a GET request.
+    """
+    logger.info("Received GET request to /slack/events")
+    return Response("OK", status_code=200)
+
+
 @app.post("/slack/events")
 async def slack_events(request: Request) -> Response:
     """
