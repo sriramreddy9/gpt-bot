@@ -13,6 +13,7 @@ from config.settings import SERVER_HOST, SERVER_PORT, DEBUG, SLACK_SIGNING_SECRE
 from auth.oauth import router as oauth_router
 from bot.slack_app import slack_app
 from utils.logger import logger
+from utils.ai_agent import call_ai_agent
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
@@ -139,16 +140,20 @@ async def slack_events(request: Request) -> Response:
                     user_id = event.get("user")
                     channel_id = event.get("channel")
                     thread_ts = event.get("thread_ts", event.get("ts"))
+                    message_text = event.get("text", "")
                     
-                    logger.info(f"Mention from {user_id} in {channel_id}")
+                    logger.info(f"Mention from {user_id} in {channel_id}: {message_text}")
                     
                     if slack_client:
+                        # Call AI agent to get response
+                        ai_response = call_ai_agent(message_text)
+                        
                         slack_client.chat_postMessage(
                             channel=channel_id,
-                            text="hey i am gptbot",
+                            text=ai_response,
                             thread_ts=thread_ts
                         )
-                        logger.info("Reply sent")
+                        logger.info(f"AI response sent: {ai_response}")
                 
                 # Handle DMs
                 elif event_type == "message":
@@ -168,14 +173,18 @@ async def slack_events(request: Request) -> Response:
                         
                         # D-prefix indicates direct message channel, or channel_type is "im"
                         if channel_type == "im" or (channel_id and channel_id.startswith("D")):
-                            logger.info(f"DM from {user_id} in {channel_id}")
+                            message_text = event.get("text", "")
+                            logger.info(f"DM from {user_id} in {channel_id}: {message_text}")
                             
                             if slack_client:
+                                # Call AI agent to get response
+                                ai_response = call_ai_agent(message_text)
+                                
                                 slack_client.chat_postMessage(
                                     channel=channel_id,
-                                    text="hey i am gptbot"
+                                    text=ai_response
                                 )
-                                logger.info("DM reply sent")
+                                logger.info(f"AI DM response sent: {ai_response}")
             
             except SlackApiError as e:
                 logger.error(f"Slack API error: {e.response['error']}")
