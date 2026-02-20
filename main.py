@@ -152,29 +152,30 @@ async def slack_events(request: Request) -> Response:
                 
                 # Handle DMs
                 elif event_type == "message":
-                    # Check if this is a direct message
-                    channel_type = event.get("channel_type") or event.get("type")
-                    channel_id = event.get("channel")
-                    user_id = event.get("user")
-                    
-                    # Log all message events for debugging
-                    logger.info(f"Message event - channel_type: {channel_type}, channel: {channel_id}, user: {user_id}")
-                    
-                    # Skip bot messages and messages without user
-                    if event.get("subtype") in ["bot_message", "message_deleted"]:
-                        logger.info("Skipping bot message or deleted message")
-                    elif not user_id:
+                    # Skip if this is a bot message or a message from our bot
+                    if event.get("bot_id") or event.get("subtype") in ["bot_message", "message_deleted"]:
+                        logger.info("Skipping bot message")
+                    elif not event.get("user"):
                         logger.info("Skipping message without user ID")
-                    elif channel_type == "im" or (hasattr(channel_id, 'startswith') and channel_id.startswith("D")):
-                        # D-prefix indicates direct message channel
-                        logger.info(f"DM from {user_id} in {channel_id}")
+                    else:
+                        # Check if this is a direct message
+                        channel_type = event.get("channel_type")
+                        channel_id = event.get("channel")
+                        user_id = event.get("user")
                         
-                        if slack_client:
-                            slack_client.chat_postMessage(
-                                channel=channel_id,
-                                text="hey i am gptbot"
-                            )
-                            logger.info("DM reply sent")
+                        # Log all message events for debugging
+                        logger.info(f"Message event - channel_type: {channel_type}, channel: {channel_id}, user: {user_id}")
+                        
+                        # D-prefix indicates direct message channel, or channel_type is "im"
+                        if channel_type == "im" or (channel_id and channel_id.startswith("D")):
+                            logger.info(f"DM from {user_id} in {channel_id}")
+                            
+                            if slack_client:
+                                slack_client.chat_postMessage(
+                                    channel=channel_id,
+                                    text="hey i am gptbot"
+                                )
+                                logger.info("DM reply sent")
             
             except SlackApiError as e:
                 logger.error(f"Slack API error: {e.response['error']}")
