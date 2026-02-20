@@ -3,13 +3,16 @@ Main FastAPI application for Slack Bot.
 Runs OAuth endpoints and handles webhook events (compatible with Vercel).
 """
 
+import json
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from config.settings import SERVER_HOST, SERVER_PORT, DEBUG
+from config.settings import SERVER_HOST, SERVER_PORT, DEBUG, SLACK_SIGNING_SECRET
 from auth.oauth import router as oauth_router
 from bot.slack_app import slack_app
 from utils.logger import logger
 from slack_bolt.adapter.fastapi import SlackRequestHandler
+from slack_bolt.request import BoltRequest
+from slack_bolt.response import BoltResponse
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -59,14 +62,32 @@ async def slack_events(request: Request) -> Response:
     Slack will POST events to this endpoint.
     The SlackRequestHandler will route to appropriate handlers.
     """
-    logger.info("Received Slack event webhook")
-    return await handler.async_handle(request)
+    try:
+        logger.info("Received Slack webhook request")
+        
+        # Get request headers
+        headers = dict(request.headers)
+        body = await request.body()
+        
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Body: {body[:200]}")  # Log first 200 chars
+        
+        # Use Slack Bolt handler
+        response = await handler.async_handle(request)
+        
+        logger.info(f"Response status: {response.status_code}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error handling Slack event: {str(e)}", exc_info=True)
+        return Response("Internal Server Error", status_code=500)
 
 
 if __name__ == "__main__":
     import uvicorn
     
     logger.info(f"Starting server on {SERVER_HOST}:{SERVER_PORT}")
+    logger.info(f"Signing Secret configured: {bool(SLACK_SIGNING_SECRET)}")
     uvicorn.run(
         "main:app",
         host=SERVER_HOST,

@@ -1,19 +1,17 @@
 """
 Slack Bolt App initialization with Webhooks (for Vercel compatibility).
-Uses OAuth with file-based installation store to handle multiple workspaces.
+Uses the bot token and signing secret for webhook events.
 """
 
 from slack_bolt import App
-from config.settings import SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_SIGNING_SECRET, SLACK_SCOPES
+from config.settings import SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_SCOPES
 from utils.logger import logger
 
-# Initialize Slack App with OAuth support
+# Initialize Slack App with bot token and signing secret
+# For webhooks, we use the bot token directly (not OAuth in the app)
 slack_app = App(
-    client_id=SLACK_CLIENT_ID,
-    client_secret=SLACK_CLIENT_SECRET,
-    scopes=SLACK_SCOPES,
+    token=SLACK_BOT_TOKEN,
     signing_secret=SLACK_SIGNING_SECRET,
-    installation_store_enabled=True,
     token_verification_enabled=True
 )
 
@@ -25,4 +23,4 @@ from bot.handlers.dm_handler import register_dm_handler
 register_mention_handler(slack_app)
 register_dm_handler(slack_app)
 
-logger.info("Slack App initialized with OAuth and Webhook support")
+logger.info("Slack App initialized with bot token and signing secret for webhooks")
