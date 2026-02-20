@@ -1,14 +1,15 @@
 """
 Main FastAPI application for Slack Bot.
-Runs the OAuth endpoints and initializes Socket Mode for event listening.
+Runs OAuth endpoints and handles webhook events (compatible with Vercel).
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from config.settings import SERVER_HOST, SERVER_PORT, DEBUG
 from auth.oauth import router as oauth_router
-from bot.slack_app import init_socket_mode
+from bot.slack_app import slack_app
 from utils.logger import logger
+from slack_bolt.adapter.fastapi import SlackRequestHandler
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -29,6 +30,9 @@ app.add_middleware(
 # Include OAuth routes
 app.include_router(oauth_router)
 
+# Initialize Slack Bolt handler for FastAPI
+handler = SlackRequestHandler(slack_app)
+
 
 @app.get("/")
 def root():
@@ -48,12 +52,15 @@ def health():
     }
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize Socket Mode on startup."""
-    logger.info("Starting Slack Bot...")
-    init_socket_mode()
-    logger.info("Slack Bot started successfully")
+@app.post("/slack/events")
+async def slack_events(request: Request) -> Response:
+    """
+    Handle Slack events via webhooks.
+    Slack will POST events to this endpoint.
+    The SlackRequestHandler will route to appropriate handlers.
+    """
+    logger.info("Received Slack event webhook")
+    return await handler.async_handle(request)
 
 
 if __name__ == "__main__":
