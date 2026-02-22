@@ -25,6 +25,14 @@ def connect_slack():
     """
     Redirect user to Slack OAuth consent screen.
     """
+    # Validate credentials at runtime
+    if not SLACK_CLIENT_ID or not SLACK_REDIRECT_URI:
+        logger.error("OAuth credentials not configured - SLACK_CLIENT_ID or SLACK_REDIRECT_URI missing")
+        return JSONResponse({
+            "status": "error",
+            "message": "OAuth is not configured. Please set SLACK_CLIENT_ID and SLACK_REDIRECT_URI environment variables."
+        }, status_code=500)
+    
     logger.info(f"OAuth Connect Called - Client ID: {SLACK_CLIENT_ID}, Redirect URI: {SLACK_REDIRECT_URI}")
     
     scope_str = ",".join(SLACK_SCOPES)
@@ -44,6 +52,14 @@ def slack_callback(code: str, state: str):
     """
     Handle Slack OAuth callback and exchange code for token.
     """
+    # Validate credentials at runtime
+    if not SLACK_CLIENT_ID or not SLACK_CLIENT_SECRET or not SLACK_REDIRECT_URI:
+        logger.error("OAuth credentials not configured for callback")
+        return JSONResponse({
+            "status": "error",
+            "message": "OAuth is not configured. Please set environment variables."
+        }, status_code=500)
+    
     try:
         logger.info(f"Received Slack OAuth callback with code: {code[:20]}...")
         
@@ -53,9 +69,9 @@ def slack_callback(code: str, state: str):
             "client_secret": SLACK_CLIENT_SECRET,
             "code": code,
             "redirect_uri": SLACK_REDIRECT_URI
-        logger.info(f"Sending payload to Slack - client_id: {SLACK_CLIENT_ID}, redirect_uri: {SLACK_REDIRECT_URI}")
-        
         }
+        
+        logger.info(f"Sending payload to Slack - client_id: {SLACK_CLIENT_ID}, redirect_uri: {SLACK_REDIRECT_URI}")
         
         response = requests.post(url, data=payload)
         slack_data = response.json()

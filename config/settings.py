@@ -14,14 +14,6 @@ SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
 SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
 SLACK_REDIRECT_URI = os.getenv("SLACK_REDIRECT_URI")
 
-# Validate credentials are loaded
-if not SLACK_CLIENT_ID:
-    raise ValueError("SLACK_CLIENT_ID not found in environment variables")
-if not SLACK_CLIENT_SECRET:
-    raise ValueError("SLACK_CLIENT_SECRET not found in environment variables")
-if not SLACK_REDIRECT_URI:
-    raise ValueError("SLACK_REDIRECT_URI not found in environment variables")
-
 # Slack Signing Secret (for webhook verification)
 SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET", "")
 
