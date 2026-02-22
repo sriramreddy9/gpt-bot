@@ -3,6 +3,7 @@ Slack OAuth endpoints for app installation and authorization.
 """
 
 import requests
+from urllib.parse import urlencode
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse, JSONResponse
 from config.settings import (
@@ -25,13 +26,13 @@ def connect_slack():
     Redirect user to Slack OAuth consent screen.
     """
     scope_str = ",".join(SLACK_SCOPES)
-    oauth_url = (
-        f"https://slack.com/oauth/v2/authorize"
-        f"?client_id={SLACK_CLIENT_ID}"
-        f"&scope={scope_str}"
-        f"&redirect_uri={SLACK_REDIRECT_URI}"
-        f"&state=secure_random_state"
-    )
+    oauth_params = {
+        "client_id": SLACK_CLIENT_ID,
+        "scope": scope_str,
+        "redirect_uri": SLACK_REDIRECT_URI,
+        "state": "secure_random_state"
+    }
+    oauth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(oauth_params)}"
     logger.info(f"Redirecting to Slack OAuth: {oauth_url}")
     return RedirectResponse(oauth_url)
 
