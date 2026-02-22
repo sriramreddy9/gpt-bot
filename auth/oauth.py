@@ -25,6 +25,8 @@ def connect_slack():
     """
     Redirect user to Slack OAuth consent screen.
     """
+    logger.info(f"OAuth Connect Called - Client ID: {SLACK_CLIENT_ID}, Redirect URI: {SLACK_REDIRECT_URI}")
+    
     scope_str = ",".join(SLACK_SCOPES)
     oauth_params = {
         "client_id": SLACK_CLIENT_ID,
@@ -51,6 +53,8 @@ def slack_callback(code: str, state: str):
             "client_secret": SLACK_CLIENT_SECRET,
             "code": code,
             "redirect_uri": SLACK_REDIRECT_URI
+        logger.info(f"Sending payload to Slack - client_id: {SLACK_CLIENT_ID}, redirect_uri: {SLACK_REDIRECT_URI}")
+        
         }
         
         response = requests.post(url, data=payload)
