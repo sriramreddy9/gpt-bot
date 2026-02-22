@@ -7,9 +7,11 @@ import json
 import hmac
 import hashlib
 import time
+import os
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.background import BackgroundTasks
+from fastapi.responses import JSONResponse
 from config.settings import SERVER_HOST, SERVER_PORT, DEBUG, SLACK_SIGNING_SECRET
 from auth.oauth import router as oauth_router
 from bot.slack_app import slack_app
@@ -48,7 +50,32 @@ app.add_middleware(
 app.include_router(oauth_router)
 
 
-def verify_slack_request(request_body: bytes, timestamp: str, signature: str) -> bool:
+@app.get("/debug/config")
+def debug_config():
+    """
+    Debug endpoint to check which environment variables are set.
+    Only accessible in DEBUG mode.
+    """
+    if not DEBUG:
+        return JSONResponse({
+            "status": "error",
+            "message": "Debug endpoint only available in DEBUG mode"
+        }, status_code=403)
+    
+    return JSONResponse({
+        "status": "debug_info",
+        "env_vars": {
+            "SLACK_CLIENT_ID": "✓ SET" if os.getenv("SLACK_CLIENT_ID") else "✗ MISSING",
+            "SLACK_CLIENT_SECRET": "✓ SET" if os.getenv("SLACK_CLIENT_SECRET") else "✗ MISSING",
+            "SLACK_REDIRECT_URI": "✓ SET" if os.getenv("SLACK_REDIRECT_URI") else "✗ MISSING",
+            "SLACK_BOT_TOKEN": "✓ SET" if os.getenv("SLACK_BOT_TOKEN") else "✗ MISSING",
+            "SLACK_APP_TOKEN": "✓ SET" if os.getenv("SLACK_APP_TOKEN") else "✗ MISSING",
+            "SLACK_SIGNING_SECRET": "✓ SET" if os.getenv("SLACK_SIGNING_SECRET") else "✗ MISSING",
+            "LYZR_API_KEY": "✓ SET" if os.getenv("LYZR_API_KEY") else "✗ MISSING",
+        },
+        "message": "Check Vercel dashboard Environment Variables if any show MISSING"
+    })
+
     """
     Verify that the request came from Slack using the signing secret.
     """
