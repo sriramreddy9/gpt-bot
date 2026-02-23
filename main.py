@@ -76,6 +76,8 @@ def debug_config():
         "message": "Check Vercel dashboard Environment Variables if any show MISSING"
     })
 
+
+def verify_slack_request(request_body: bytes, timestamp: str, signature: str) -> bool:
     """
     Verify that the request came from Slack using the signing secret.
     """
